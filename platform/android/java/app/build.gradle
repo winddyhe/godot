@@ -1,7 +1,6 @@
 // Gradle build config for Godot Engine's Android port.
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
 }
 
 apply from: 'config.gradle'
@@ -107,10 +106,6 @@ android {
     compileOptions {
         sourceCompatibility versions.javaVersion
         targetCompatibility versions.javaVersion
-    }
-
-    kotlinOptions {
-        jvmTarget = versions.javaVersion
     }
 
     assetPacks = [":assetPackInstallTime"]
@@ -257,10 +252,12 @@ android {
         release.jniLibs.srcDirs = ['libs/release']
     }
 
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            String filenameSuffix = variant.flavorName == "mono" ? variant.name : variant.buildType.name
-            output.outputFileName = "android_${filenameSuffix}.apk"
+    androidComponents {
+        onVariants(selector().all()) { variant ->
+            variant.outputs.each { output ->
+                String filenameSuffix = variant.flavorName == "mono" ? variant.name : variant.buildType
+                output.outputFileName.set("android_${filenameSuffix}.apk")
+            }
         }
     }
 }

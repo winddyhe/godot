@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.library'
-    id 'org.jetbrains.kotlin.android'
 }
 
 ext {
@@ -37,10 +36,6 @@ android {
     compileOptions {
         sourceCompatibility versions.javaVersion
         targetCompatibility versions.javaVersion
-    }
-
-    kotlinOptions {
-        jvmTarget = versions.javaVersion
     }
 
     buildFeatures {
@@ -80,13 +75,32 @@ android {
         editorDebug.jniLibs.srcDirs = ['libs/tools/debug']
     }
 
-    libraryVariants.all { variant ->
-        def flavorName = variant.getFlavorName()
+    publishing {
+        singleVariant("templateDebug") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+        singleVariant("templateRelease") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+        singleVariant("editorRelease") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
+}
+
+// AGP 9 移除了旧的 'libraryVariants' 变体 API（以及它背后的 BaseExtension），
+// 这里改用新的 'androidComponents.onVariants' 变体 API。
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def flavorName = variant.flavorName
         if (flavorName == null || flavorName == "") {
             throw new GradleException("Invalid product flavor: $flavorName")
         }
 
-        def buildType = variant.buildType.name
+        def buildType = variant.buildType
         if (buildType == null || buildType == "" || !supportedFlavorsBuildTypes[flavorName].contains(buildType)) {
             throw new GradleException("Invalid build type: $buildType")
         }
@@ -114,10 +128,12 @@ android {
             }
         }
 
-        // Update the name of the generated library
+        // Update the name of the generated library.
+        // AGP 9 的 'LibraryVariant' 不再暴露 'outputs'，因此改在打包 AAR 的任务上设置文件名。
         def outputSuffix = "${sconsTarget}"
-        variant.outputs.all { output ->
-            output.outputFileName = "godot-lib.${outputSuffix}.aar"
+        def aarTaskName = "bundle${variant.name.capitalize()}Aar"
+        tasks.matching { it.name == aarTaskName }.configureEach {
+            archiveFileName.set("godot-lib.${outputSuffix}.aar")
         }
 
         // Find scons' executable path
@@ -156,28 +172,19 @@ android {
 
             // Creating gradle task to generate the native libraries for the selected abi.
             def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
-            tasks.create(name: taskName, type: Exec) {
+            tasks.register(taskName, Exec) {
                 executable sconsExecutableFile.absolutePath
                 args "--directory=${pathToRootDir}", "platform=android", "store_release=${storeRelease}", "production=${productionBuild}", "dev_mode=${debugBuild}", "dev_build=${debugBuild}", "debug_symbols=${debugSymbols}", "tests=${runTests}", "target=${sconsTarget}", "arch=${selectedAbi}", "-j" + Runtime.runtime.availableProcessors()
             }
 
             // Schedule the tasks so the generated libs are present before the aar file is packaged.
-            tasks["merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"].dependsOn taskName
-        }
-    }
-
-    publishing {
-        singleVariant("templateDebug") {
-            withSourcesJar()
-            withJavadocJar()
-        }
-        singleVariant("templateRelease") {
-            withSourcesJar()
-            withJavadocJar()
-        }
-        singleVariant("editorRelease") {
-            withSourcesJar()
-            withJavadocJar()
+            // AGP registers the merge task after the variant callback, so hook in after evaluation.
+            def mergeTaskName = "merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"
+            afterEvaluate {
+                tasks.matching { it.name == mergeTaskName }.configureEach { t ->
+                    t.dependsOn(taskName)
+                }
+            }
         }
     }
 }
