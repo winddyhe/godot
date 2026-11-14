@@ -252,6 +252,15 @@ def configure(env: "SConsEnvironment"):
     env.Append(LINKFLAGS=["-Wl,--build-id"])
     env.Append(LINKFLAGS=["-Wl,-soname,libgodot_android.so"])
 
+    # Knight-Godot: 16 KB page size support (Android 15+).
+    # Every LOAD segment of a 64-bit native library must be 16 KB aligned, otherwise the library
+    # fails to load on devices running a 16 KB page kernel. NDK r28+ happens to default to
+    # max-page-size=16384, but relying on that default silently regresses when the NDK is
+    # downgraded or the toolchain changes, so pin it explicitly. 32-bit ABIs keep the default:
+    # 16 KB pages are a 64-bit concern, and widening their alignment only inflates the .so.
+    if env["arch"] in ["arm64", "x86_64"]:
+        env.Append(LINKFLAGS=["-Wl,-z,max-page-size=16384"])
+
     env.Prepend(CPPPATH=["#platform/android"])
     env.Append(CPPDEFINES=["ANDROID_ENABLED", "UNIX_ENABLED"])
     env.Append(LIBS=["OpenSLES", "EGL", "android", "log", "z", "dl"])
